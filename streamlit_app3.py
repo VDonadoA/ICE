@@ -11,12 +11,14 @@ DB_NAME = "usd_cop_data.db"
 def ensure_performance_table():
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
+
     c.execute("""
         CREATE TABLE IF NOT EXISTS performance_history (
-            rate_date        TEXT PRIMARY KEY,
-            predicted_bucket TEXT,
-            actual_bucket    TEXT,
-            success          INTEGER
+            prediction_date     TEXT PRIMARY KEY,
+            predicted_bucket    TEXT,
+            actual_bucket       TEXT,
+            success             INTEGER,
+            note                TEXT
         )
     """)
     conn.commit()
@@ -50,7 +52,7 @@ def append_performance_row(pred_date, predicted_bucket):
     # 3) insert only this one record
     c.execute("""
         INSERT OR REPLACE INTO performance_history
-          (rate_date, predicted_bucket, actual_bucket, success)
+          (prediction_date, predicted_bucket, actual_bucket, success)
         VALUES (?, ?, ?, ?)
     """, (pred_date, predicted_bucket, actual, success))
 
@@ -176,7 +178,7 @@ def store_prediction(pred_date, predicted):
     note = "fin de semana" if pd.to_datetime(pred_date).weekday() >= 0 and (pd.to_datetime(pred_date) - dt.today()).days > 2 else None
 
     cursor.execute("""
-        INSERT OR REPLACE INTO prediction_history 
+        INSERT OR REPLACE INTO performance_history 
         (prediction_date, predicted_bucket, actual_bucket, success, note)
         VALUES (?, ?, NULL, NULL, ?)
     """, (pred_date, predicted, note))
@@ -207,7 +209,7 @@ def get_next_prediction_date_avoiding_duplicates(from_date):
             target += timedelta(days=1)
 
         date_str = target.strftime('%Y-%m-%d')
-        cursor.execute("SELECT 1 FROM prediction_history WHERE prediction_date = ?", (date_str,))
+        cursor.execute("SELECT 1 FROM performance_history WHERE prediction_date = ?", (date_str,))
         exists = cursor.fetchone()
         if not exists:
             conn.close()
@@ -217,13 +219,13 @@ def get_next_prediction_date_avoiding_duplicates(from_date):
 
 
 # --- Update prediction history ---
-def update_prediction_history():
+def update_performance_history():
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
 
     # Get all prediction dates with no actual
     cursor.execute("""
-        SELECT prediction_date, predicted_bucket FROM prediction_history
+        SELECT prediction_date, predicted_bucket FROM performance_history
         WHERE actual_bucket IS NULL
     """)
     pending = cursor.fetchall()
@@ -248,13 +250,13 @@ def update_prediction_history():
 
     if updates:
         cursor.executemany("""
-            UPDATE prediction_history
+            UPDATE performance_history
             SET actual_bucket = ?, success = ?
             WHERE prediction_date = ?
         """, updates)
 
     # Calculate success rate
-    cursor.execute("SELECT AVG(success) FROM prediction_history WHERE success IS NOT NULL")
+    cursor.execute("SELECT AVG(success) FROM performance_history WHERE success IS NOT NULL")
     kpi = cursor.fetchone()[0] or 0.0
 
     conn.commit()
@@ -310,7 +312,7 @@ else:
     # Check if prediction already exists to avoid duplicates
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    cursor.execute("SELECT 1 FROM prediction_history WHERE prediction_date = ?", (prediction_date,))
+    cursor.execute("SELECT 1 FROM performance_history WHERE prediction_date = ?", (prediction_date,))
     already_exists = cursor.fetchone()
     conn.close()
 
@@ -347,9 +349,9 @@ st.metric("Precisión acumulada", f"{avg_success*100:.2f}%")
 # Show the deduped performance table
 conn = sqlite3.connect(DB_NAME)
 df_perf = pd.read_sql_query("""
-    SELECT rate_date, predicted_bucket, actual_bucket, success
+    SELECT prediction_date, predicted_bucket, actual_bucket, success
     FROM performance_history
-    ORDER BY rate_date DESC
+    ORDER BY prediction_date DESC
 """, conn)
 conn.close()
 
