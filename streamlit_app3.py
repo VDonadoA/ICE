@@ -30,10 +30,7 @@ def append_performance_row(pred_date, predicted_bucket):
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
 
-    # 1) clear out any prior rows
-    c.execute("DELETE FROM performance_history")
-
-    # 2) re-compute actual & success off the freshest exchange_rates
+    # re-compute actual & success off the freshest exchange_rates
     c.execute("SELECT exchange_rate FROM exchange_rates WHERE start_date = ?", (pred_date,))
     row = c.fetchone()
     if row:
@@ -49,7 +46,7 @@ def append_performance_row(pred_date, predicted_bucket):
         actual = None
         success = None
 
-    # 3) insert only this one record
+    # insert only this one record
     c.execute("""
         INSERT OR REPLACE INTO performance_history
           (prediction_date, predicted_bucket, actual_bucket, success)
